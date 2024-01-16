@@ -2,3 +2,7 @@
 .DS_Store
 # 拡張子が.xlsxのファイル
 *.xlsx
+
+*.db
+
+*.sqlite
