@@ -133,7 +133,6 @@ sql_insert = "INSERT INTO database (date, high_temp, low_temp, sleep_time) VALUE
 for i in range(len(sleep_time_list)):
     # 各リストからデータを取得    
     date = date_list[i]
-    # date = datetime.datetime.strptime('2023/12/13', '%Y/%m/%d')
     high_temp = float(high_temp_list[i].replace('℃', '')) if i < len(high_temp_list) else None
     low_temp = float(low_temp_list[i].replace('℃', '')) if i < len(low_temp_list) else None
     sleep_time = sleep_time_list[i]
@@ -146,7 +145,3 @@ con.commit()
 
 # DB接続を閉じる
 con.close()
-
-
-
-
