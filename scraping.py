@@ -1,120 +1,64 @@
-from bs4 import BeautifulSoup
 import requests
-import bs4
+from bs4 import BeautifulSoup
 import pandas as pd
+import sqlite3
+from datetime import datetime
 
-
-# 12月の最高気温データを取得
-res = requests.get('https://tenki.jp/amp/past/2023/12/weather/3/15/47682/')
-soup = BeautifulSoup(res.text, 'html.parser')
-
-# 'past-calender-box' クラスを持つdivを取得
-div_tag = soup.find('div', class_='past-calender-box')
-
-# 'past-calender-item' クラスを持つ全てのdivタグを取得
-calenders_month_12 = div_tag.select('div.past-calender-item:not(.past)')
-
-high_temp_month_12 = []
-for item in calenders_month_12:
-    # 各カレンダー要素から 'temp high-temp red' クラスを持つpタグを探す
-    p_tag = item.find('p', class_='temp high-temp red')
-    if p_tag:
-        # タグが見つかればその文字列をリストに追加
-        high_temp_month_12.append(p_tag.string)
-
-# print(high_temp_month_12)
-
-
-# 1月の最高気温を取得
-res = requests.get('https://tenki.jp/amp/past/2024/01/weather/3/15/47682/')
-soup = BeautifulSoup(res.text, 'html.parser')
-
-# 'past-calender-box' クラスを持つdivを取得
-div_tag = soup.find('div', class_='past-calender-box')
-
-# CSSセレクタを使用して 'past-calender-item' クラスのみを持つdivタグを取得
-calenders_month_1 = div_tag.select('div.past-calender-item:not(.past)')
-
-high_temp_month_1 = []
-for item in calenders_month_1:
-    # 各カレンダー要素から 'temp high-temp red' クラスを持つpタグを探す
-    p_tag = item.find('p', class_='temp high-temp red')
-    if p_tag:
-        # タグが見つかればその文字列をリストに追加
-        high_temp_month_1.append(p_tag.get_text())
-
-# print(high_temp_month_1)
-
-
-# 12月と1月の最高気温データを結合
-high_temp_lists = []
-
-for temp in high_temp_month_12:
-    joined_temp = ''.join(temp)
-    high_temp_lists.append(joined_temp)
-
-for temp in high_temp_month_1:
-    joined_temp = ''.join(temp)
-    high_temp_lists.append(joined_temp)
+def fetch_temperatures(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    calendar_items = soup.select('div.past-calender-box div.past-calender-item:not(.past)')
     
-high_temp_lists = high_temp_lists[17:]
+    high_temps = [item.find('p', class_='temp high-temp red').get_text() for item in calendar_items if item.find('p', class_='temp high-temp red')]
+    low_temps = [item.find('p', class_='temp low-temp blue').get_text() for item in calendar_items if item.find('p', class_='temp low-temp blue')]
+    return high_temps, low_temps
 
-# print(high_temp_lists)
-print(len(high_temp_lists))
+def parse_temperature(temps):
+    return [float(temp.replace('℃', '')) for temp in temps]
 
+def insert_data_to_db(cur, data):
+    insert_sql = "INSERT INTO database (date, high_temp, low_temp, sleep_time) VALUES (?, ?, ?, ?)"
+    cur.executemany(insert_sql, data)
 
-# 12月の最低気温データを取得
-res = requests.get('https://tenki.jp/amp/past/2023/12/weather/3/15/47682/')
-soup = BeautifulSoup(res.text, 'html.parser')
+def create_database(cur):
+    sql_create_table = '''
+    CREATE TABLE IF NOT EXISTS database (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date DATETIME,
+        high_temp REAL,
+        low_temp REAL,
+        sleep_time REAL
+    );
+    '''
+    cur.execute(sql_create_table)
 
-div_tag = soup.find('div', class_='past-calender-box')
+def main():
+    # URLs for temperature data
+    url_dec = 'https://tenki.jp/amp/past/2023/12/weather/3/15/47682/'
+    url_jan = 'https://tenki.jp/amp/past/2024/01/weather/3/15/47682/'
 
-# 'past-calender-item' クラスを持つ全てのdivタグを取得
-calenders_month_12 = div_tag.select('div.past-calender-item:not(.past)')
+    # Fetch and parse temperature data
+    high_temp_dec, low_temp_dec = fetch_temperatures(url_dec)
+    high_temp_jan, low_temp_jan = fetch_temperatures(url_jan)
 
-low_temp_month_12 = []
-for item in calenders_month_12:
-    # 各カレンダー要素から 'temp low-temp blue' クラスを持つpタグを探す
-    p_tag = item.find('p', class_='temp low-temp blue')
-    if p_tag:
-        # タグが見つかればその文字列をリストに追加
-        low_temp_month_12.append(p_tag.string)
+    high_temps = parse_temperature(high_temp_dec + high_temp_jan)
+    low_temps = parse_temperature(low_temp_dec + low_temp_jan)
 
-# print(low_temp_month_12)
+    # Read sleep data
+    df = pd.read_csv('./dspro_last_assignment_local_data.csv')
+    sleep_times = df['睡眠時間'].tolist()
+    dates = pd.to_datetime(df['日付']).dt.date.tolist()
 
+    # Prepare data for insertion
+    data = [(str(dates[i]), high_temps[i], low_temps[i], sleep_times[i]) for i in range(len(sleep_times))]
 
-# 1月の最低気温を取得
-res = requests.get('https://tenki.jp/amp/past/2024/01/weather/3/15/47682/')
-soup = BeautifulSoup(res.text, 'html.parser')
+    # Database operations
+    db_path = './database.sqlite'
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+        create_database(cur)
+        insert_data_to_db(cur, data)
+        conn.commit()
 
-# 'past-calender-box' クラスを持つdivを取得
-div_tag = soup.find('div', class_='past-calender-box')
-
-# 'past-calender-item' クラスを持つ全てのdivタグを取得
-calenders_month_1 = div_tag.select('div.past-calender-item:not(.past)')
-
-low_temp_month_1 = []
-for item in calenders_month_1:
-    # 各カレンダー要素から 'temp high-temp red' クラスを持つpタグを探す
-    p_tag = item.find('p', class_='temp low-temp blue')
-    if p_tag:
-        # タグが見つかればその文字列をリストに追加
-        low_temp_month_1.append(p_tag.string)
-
-# print(low_temp_month_1)
-
-
-# 最低気温のデータを結合
-low_temp_lists = []
-for temp in low_temp_month_12:
-    joined_temp = ''.join(temp)
-    low_temp_lists.append(joined_temp)
-
-for temp in low_temp_month_1:
-    joined_temp = ''.join(temp)
-    low_temp_lists.append(joined_temp)
-    
-# 不要なデータを削除
-low_temp_lists = low_temp_lists[17:]
-
-print(len(low_temp_lists))
+if __name__ == "__main__":
+    main()
